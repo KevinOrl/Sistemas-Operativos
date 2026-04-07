@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include<unistd.h>
 #include <time.h>
+#include <signal.h>
 
 struct algoritmos {
     int id;
@@ -43,6 +44,12 @@ struct PCB {
 
 struct PCB *listaProcesos = NULL;
 int siguientePID = 1;
+volatile sig_atomic_t automaticoActivo = 1;
+
+void manejarCtrlC(int signal) {
+    (void)signal;
+    automaticoActivo = 0;
+}
 
 struct PCB *crearNodoProceso(int burst, int prioridad, int llegada) {
     struct PCB *nuevo = (struct PCB *)malloc(sizeof(struct PCB));
@@ -207,8 +214,6 @@ void lecturaManual(int algoritmo){
 
 void lecturaAutomatica(int algoritmo){
     int burstMin, burstMax;
-    int cantidadProcesos;
-    int llegadaMin, llegadaMax;
     int tiempoLlegadaActual = 0;
 
     printf("Ingrese el burst minimo: ");
@@ -216,32 +221,19 @@ void lecturaAutomatica(int algoritmo){
     printf("Ingrese el burst maximo: ");
     scanf("%d", &burstMax);
 
-    printf("Ingrese la cantidad de procesos a generar: ");
-    scanf("%d", &cantidadProcesos);
-
-    printf("Ingrese llegada minima entre procesos: ");
-    scanf("%d", &llegadaMin);
-    printf("Ingrese llegada maxima entre procesos: ");
-    scanf("%d", &llegadaMax);
-
     if (burstMin > burstMax) {
         int temporal = burstMin;
         burstMin = burstMax;
         burstMax = temporal;
     }
 
-    if (llegadaMin > llegadaMax) {
-        int temporal = llegadaMin;
-        llegadaMin = llegadaMax;
-        llegadaMax = temporal;
-    }
+    automaticoActivo = 1;
+    printf("Modo automatico iniciado. Presione Ctrl+C para detener la creacion.\n");
 
-    printf("Modo automatico iniciado.\n");
-
-    for (int i = 0; i < cantidadProcesos; i++) {
+    while (automaticoActivo) {
         int burst = burstMin + rand() % (burstMax - burstMin + 1);
         int prioridad = 1 + rand() % 10;
-        int intervaloLlegada = llegadaMin + rand() % (llegadaMax - llegadaMin + 1);
+        int intervaloLlegada = rand() % 6 + 1;
 
         struct PCB *nuevo = crearNodoProceso(burst, prioridad, tiempoLlegadaActual);
         if (nuevo != NULL) {
@@ -249,7 +241,10 @@ void lecturaAutomatica(int algoritmo){
         }
 
         tiempoLlegadaActual += intervaloLlegada;
+        sleep(intervaloLlegada);
     }
+
+    printf("\nCreacion automatica detenida por usuario.\n");
 
     imprimirLista(listaProcesos);
 
@@ -264,6 +259,7 @@ void lecturaAutomatica(int algoritmo){
 int main() {
     pthread_t hilo;
     srand(time(NULL));
+    signal(SIGINT, manejarCtrlC);
 
     //primer argumento es nuestro hilo referenciado, el segundo es para atributos o bien si es una estructura de datos,
     //  el tercero es la función que se va a ejecutar y el cuarto es un argumento que se le puede pasar a la función
