@@ -1,3 +1,4 @@
+
 // Servidor: Job Scheduler + CPU Scheduler
 #include <errno.h>
 #include <pthread.h>
@@ -46,6 +47,8 @@ typedef struct Finalizado {
 
 static PCB *readyHead = NULL;
 static Finalizado *finHead = NULL;
+static int algoritmo = 0;
+static int quantum = 0; // Para Round Robin
 
 static pthread_mutex_t readyMutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t readyCond = PTHREAD_COND_INITIALIZER;
@@ -101,7 +104,8 @@ static void enqueueReady(PCB *p) {
     cur->next = p;
 }
 
-static PCB *dequeueFIFO(void) {
+/*Funcion para sacar el primer proceso que llegó a la cola y sacarlo (FIFO)*/
+static PCB *seleccionarSiguiente(void) {
     if (readyHead == NULL) {
         return NULL;
     }
@@ -111,8 +115,64 @@ static PCB *dequeueFIFO(void) {
     return p;
 }
 
-static PCB *seleccionarSiguiente(void) {
-    return dequeueFIFO();
+// Selecciona el proceso con mayor prioridad (menor valor de prioridad)
+// En caso de empate, selecciona el que llegó primero (FIFO entre los de misma prioridad)
+// Esta es similar al de SFJ, pero con prioridad en lugar de burst restante
+static PCB *seleccionarSiguienteHPF(void) {
+    if (readyHead == NULL) {
+        return NULL;
+    }
+    PCB *prevMax = NULL;
+    PCB *max = readyHead;
+    PCB *prev = readyHead;
+    PCB *cur = readyHead->next;
+    while (cur != NULL) {
+        if (cur->prioridad < max->prioridad) {
+            prevMax = prev;
+            max = cur;
+        }
+        prev = cur;
+        cur = cur->next;
+    }
+    // Quitar max de la lista
+    if (max == readyHead) {
+        readyHead = max->next;
+    } else if (prevMax != NULL) {
+        prevMax->next = max->next;
+    }
+    max->next = NULL;
+    return max;
+}
+
+static PCB *seleccionarSiguienteSJF(void) {
+    if (readyHead == NULL) {
+        return NULL;
+    }
+    /*Se define 4 PCBs para ir recorriendo y buscando el proceso con 
+    el menor burst restante*/
+    PCB *prevMin = NULL;
+    PCB *min = readyHead;
+    PCB *prev = readyHead;
+    PCB *cur = readyHead->next;
+
+    /*Se recorre la lista de procesos listos (readyHead)*/
+    while (cur != NULL) {
+        if (cur->burstRestante < min->burstRestante) {
+            prevMin = prev;
+            min = cur;
+        }
+        prev = cur;
+        cur = cur->next;
+    }
+    // Quitar min de la lista
+    if (min == readyHead) {
+        readyHead = min->next;
+    } else if (prevMin != NULL) {
+        prevMin->next = min->next;
+    }
+    min->next = NULL;
+    /*Se retorna el proceso seleccionado*/
+    return min;
 }
 
 static void imprimirReady(void) {
@@ -193,41 +253,79 @@ static void *jobSchedulerThread(void *arg) {
     return NULL;
 }
 
-static void ejecutarProceso(PCB *p) {
+static void ejecutarProceso(PCB *p, int quantum) {
     if (p == NULL) {
         return;
     }
 
-    int cuanto = p->burstRestante;
+    if (quantum > 0)
+    {
+        //Validacion para saber si el quantum es mayor al burst restante, 
+        //si es así se duerme el tiempo del burst restante y se asigna como 0
+        if (quantum > p->burstRestante)
+        {
+            sleep((unsigned int)p->burstRestante);
+            p->burstRestante = 0;
 
-    printf("Proceso PID=%d entra en ejecucion (Burst=%d, Prioridad=%d)\n",
-           p->pid,
-           p->burstRestante,
-           p->prioridad);
+        }else{
+            sleep((unsigned int)quantum);
+            p->burstRestante -= quantum;
+        }
 
-    sleep((unsigned int)cuanto);
-    p->burstRestante -= cuanto;
+    
+        if (p->burstRestante <= 0) {
+            p->salida = tiempoRelativoAhora();
+            p->tat = p->salida - p->llegada;
+            p->wt = p->tat - p->burstTotal;
 
-    if (p->burstRestante <= 0) {
-        p->salida = tiempoRelativoAhora();
-        p->tat = p->salida - p->llegada;
-        p->wt = p->tat - p->burstTotal;
+            printf("Proceso PID=%d finalizado. Salida=%d TAT=%d WT=%d\n",
+                p->pid,
+                p->salida,
+                p->tat,
+                p->wt);
 
-        printf("Proceso PID=%d finalizado. Salida=%d TAT=%d WT=%d\n",
-               p->pid,
-               p->salida,
-               p->tat,
-               p->wt);
+            procesosEjecutados++;
+            registrarFinalizado(p);
+            free(p);
+        } else {
+            pthread_mutex_lock(&readyMutex);
+            enqueueReady(p);
+            pthread_cond_signal(&readyCond);
+            pthread_mutex_unlock(&readyMutex);
+        }
+    }else{
+        printf("Proceso PID=%d entra en ejecucion (Burst=%d, Prioridad=%d)\n",
+            p->pid,
+            p->burstRestante,
+            p->prioridad);
 
-        procesosEjecutados++;
-        registrarFinalizado(p);
-        free(p);
-    } else {
-        pthread_mutex_lock(&readyMutex);
-        enqueueReady(p);
-        pthread_cond_signal(&readyCond);
-        pthread_mutex_unlock(&readyMutex);
+        int cuanto = p->burstRestante;
+        sleep((unsigned int)cuanto);
+        p->burstRestante -= cuanto;
+
+        if (p->burstRestante <= 0) {
+            p->salida = tiempoRelativoAhora();
+            p->tat = p->salida - p->llegada;
+            p->wt = p->tat - p->burstTotal;
+
+            printf("Proceso PID=%d finalizado. Salida=%d TAT=%d WT=%d\n",
+                p->pid,
+                p->salida,
+                p->tat,
+                p->wt);
+
+            procesosEjecutados++;
+            registrarFinalizado(p);
+            free(p);
+        } else {
+            pthread_mutex_lock(&readyMutex);
+            enqueueReady(p);
+            pthread_cond_signal(&readyCond);
+            pthread_mutex_unlock(&readyMutex);
+        }
     }
+   
+
 }
 
 static void *cpuSchedulerThread(void *arg) {
@@ -257,10 +355,43 @@ static void *cpuSchedulerThread(void *arg) {
             break;
         }
 
+        /*
+        Esta funcion funciona para FIFO
+        Deberia haber mas funciones para cada algoritmo
+        porque esta solamente trae el primer proceso que entró (FIFO)
+        */
+
+        /*Caso FIFO*/
+       if (algoritmo == 1)
+       {
         PCB *p = seleccionarSiguiente();
         pthread_mutex_unlock(&readyMutex);
+        ejecutarProceso(p, 0);
+       }
 
-        ejecutarProceso(p);
+       /*Caso SJF*/
+       if (algoritmo == 2)
+       {
+        PCB *p = seleccionarSiguienteSJF();
+        pthread_mutex_unlock(&readyMutex);
+        ejecutarProceso(p, 0);
+       }
+
+       /*Caso HPF*/
+       if (algoritmo == 3)
+       {
+        PCB *p = seleccionarSiguienteHPF();
+        pthread_mutex_unlock(&readyMutex);
+        ejecutarProceso(p, 0);
+       }
+
+       /*Caso Round Robin*/
+       if (algoritmo == 4)
+       {
+        PCB *p = seleccionarSiguiente();
+        pthread_mutex_unlock(&readyMutex);
+        ejecutarProceso(p, quantum);
+       }
     }
 
     return NULL;
@@ -361,6 +492,32 @@ int main(int argc, char **argv) {
         perror("Error en listen");
         close(listenFd);
         return 1;
+    }
+
+
+    /* Recibe el tipo de algoritmo y quantum a utilizar */
+    int fd_alg = accept(listenFd, NULL, NULL);
+    if (fd_alg == -1) {
+        perror("Error en accept para algoritmo");
+        close(listenFd);
+        return 1;
+    }
+    /*Saca los datos del algoritmo y quantum */
+    int datos[2] = {0, 0};
+    ssize_t r_alg = recv(fd_alg, datos, sizeof(datos), 0);
+    if (r_alg != sizeof(datos)) {
+        perror("Error recibiendo algoritmo y quantum");
+        close(fd_alg);
+        close(listenFd);
+        return 1;
+    }
+    /*Asigna los valores recibidos en las variables*/
+    algoritmo = datos[0];
+    quantum = datos[1];
+    close(fd_alg);
+    printf("Algoritmo de planificacion recibido: %d\n", algoritmo);
+    if (algoritmo == 4) {
+        printf("Quantum recibido: %d\n", quantum);
     }
 
     pthread_t jobThread;

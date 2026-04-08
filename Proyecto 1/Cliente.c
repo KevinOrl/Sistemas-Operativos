@@ -226,11 +226,43 @@ int main(int argc, char **argv) {
     signal(SIGINT, manejarCtrlC);
 
     int modo = 0;
+    int algoritmo = 0;
 
     printf("Seleccione modo cliente:\n");
     printf("1. Manual\n");
     printf("2. Automatico\n");
     scanf("%d", &modo);
+
+    printf("Seleccione algoritmo de planificacion:\n");
+    printf("1. FIFO\n");    
+    printf("2. SJF\n");
+    printf("3. HPF\n");
+    printf("4. Round Robin\n");
+    scanf("%d", &algoritmo);
+
+
+    int quantum = 0;
+    if (algoritmo == 4) {
+        printf("Ingrese el quantum: ");
+        scanf("%d", &quantum);
+    }
+
+    // Enviar algoritmo y quantum al servidor antes de enviar procesos
+    int fd_alg = conectarServidor(host, puerto);
+    if (fd_alg == -1) {
+        fprintf(stderr, "No se pudo conectar al servidor para enviar el algoritmo y quantum.\n");
+        return 1;
+    }
+    int datos[2];
+    datos[0] = algoritmo;
+    datos[1] = quantum;
+    ssize_t enviados_alg = send(fd_alg, datos, sizeof(datos), 0);
+    if (enviados_alg != sizeof(datos)) {
+        perror("Error enviando algoritmo y quantum al servidor");
+        close(fd_alg);
+        return 1;
+    }
+    close(fd_alg);
 
     if (modo == 1) {
         ejecutarModoManual(host, puerto);
