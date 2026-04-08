@@ -132,7 +132,7 @@ static void crearYEsperarHiloProceso(const char *host, int puerto, int burst, in
     pthread_join(hiloProceso, NULL);
 }
 
-static void ejecutarModoManual(const char *host, int puerto, int burstMin, int burstMax) {
+static void ejecutarModoManual(const char *host, int puerto) {
     FILE *archivo = fopen("Procesos.txt", "r");
     if (archivo == NULL) {
         perror("No se pudo abrir Procesos.txt");
@@ -150,11 +150,6 @@ static void ejecutarModoManual(const char *host, int puerto, int burstMin, int b
             continue;
         }
 
-        if (burst < burstMin || burst > burstMax) {
-            printf("Proceso ignorado: burst %d fuera de rango [%d, %d]\n", burst, burstMin, burstMax);
-            continue;
-        }
-
         if (prioridad < 1 || prioridad > 10) {
             printf("Proceso ignorado: prioridad %d fuera de rango [1, 10]\n", prioridad);
             continue;
@@ -167,9 +162,23 @@ static void ejecutarModoManual(const char *host, int puerto, int burstMin, int b
     fclose(archivo);
 }
 
-static void ejecutarModoAutomatico(const char *host, int puerto, int burstMin, int burstMax) {
+static void ejecutarModoAutomatico(const char *host, int puerto) {
+    int burstMin = 1;
+    int burstMax = 20;
     int tasaMin = 1;
     int tasaMax = 5;
+
+    printf("Rango de burst permitido (Automatico)\n");
+    printf("Burst minimo: ");
+    scanf("%d", &burstMin);
+    printf("Burst maximo: ");
+    scanf("%d", &burstMax);
+
+    if (burstMin > burstMax) {
+        int tmpBurst = burstMin;
+        burstMin = burstMax;
+        burstMax = tmpBurst;
+    }
 
     printf("Ingrese tasa minima de creacion (segundos): ");
     scanf("%d", &tasaMin);
@@ -216,21 +225,7 @@ int main(int argc, char **argv) {
     srand((unsigned int)time(NULL));
     signal(SIGINT, manejarCtrlC);
 
-    int burstMin = 1;
-    int burstMax = 20;
     int modo = 0;
-
-    printf("Rango de burst permitido\n");
-    printf("Burst minimo: ");
-    scanf("%d", &burstMin);
-    printf("Burst maximo: ");
-    scanf("%d", &burstMax);
-
-    if (burstMin > burstMax) {
-        int tmp = burstMin;
-        burstMin = burstMax;
-        burstMax = tmp;
-    }
 
     printf("Seleccione modo cliente:\n");
     printf("1. Manual\n");
@@ -238,9 +233,9 @@ int main(int argc, char **argv) {
     scanf("%d", &modo);
 
     if (modo == 1) {
-        ejecutarModoManual(host, puerto, burstMin, burstMax);
+        ejecutarModoManual(host, puerto);
     } else if (modo == 2) {
-        ejecutarModoAutomatico(host, puerto, burstMin, burstMax);
+        ejecutarModoAutomatico(host, puerto);
     } else {
         printf("Modo no valido\n");
         return 1;
