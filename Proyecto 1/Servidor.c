@@ -79,13 +79,20 @@ static void registrarFinalizado(const PCB *p) {
     n->next = finHead;
     finHead = n;
 }
-
+/*Acomoda los procesos que van llegando a la lista de ready*/
 static void enqueueReady(PCB *p) {
     p->next = NULL;
+
+    /*Si no hay proceso actual ejecutandose entonces el 
+    que entra se coloca como cabecilla*/
+
     if (readyHead == NULL) {
         readyHead = p;
         return;
     }
+
+    /*Si hay mas procesos en cola, entonces se recorre cada uno de los siguientes de cada proceso
+    para llegar al final de la lista y asignar el que acaba de llegar*/
 
     PCB *cur = readyHead;
     while (cur->next != NULL) {
@@ -228,12 +235,17 @@ static void *cpuSchedulerThread(void *arg) {
 
     while (1) {
         pthread_mutex_lock(&readyMutex);
-
+        /*Esta parte toma el tiempo actual (segundos y nanosegundos) y le suma un segundo
+        posteriormente, va con pthread_cond_timedwait dice que si algun otro hilo cambia o
+        el tiempo de un segundo pasó, entonces se le asigna como 0 si otro hilo esta listo
+        o ETIMEOUT si se paso el tiempo*/
         while (readyHead == NULL && servidorActivo) {
             struct timespec ts;
             clock_gettime(CLOCK_REALTIME, &ts);
             ts.tv_sec += 1;
-
+            
+            /*Se pregunta si se venció el tiempo de un segundo para sumar ese segundo como
+            cpu ocioso*/
             int rc = pthread_cond_timedwait(&readyCond, &readyMutex, &ts);
             if (rc == ETIMEDOUT && readyHead == NULL && servidorActivo) {
                 cpuOciosoSegundos++;
