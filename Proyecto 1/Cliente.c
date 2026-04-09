@@ -180,20 +180,6 @@ static void ejecutarModoAutomatico(const char *host, int puerto) {
         burstMax = tmpBurst;
     }
 
-    printf("Ingrese tasa minima de creacion (segundos): ");
-    scanf("%d", &tasaMin);
-    printf("Ingrese tasa maxima de creacion (segundos): ");
-    scanf("%d", &tasaMax);
-
-    if (tasaMin > tasaMax) {
-        int tmp = tasaMin;
-        tasaMin = tasaMax;
-        tasaMax = tmp;
-    }
-
-    if (tasaMin < 1) {
-        tasaMin = 1;
-    }
 
     generarAutomatico = 1;
     printf("Modo automatico activo. Presione Ctrl+C para detener.\n");
@@ -201,7 +187,7 @@ static void ejecutarModoAutomatico(const char *host, int puerto) {
     while (generarAutomatico) {
         int burst = burstMin + rand() % (burstMax - burstMin + 1);
         int prioridad = 1 + rand() % 10;
-        int espera = tasaMin + rand() % (tasaMax - tasaMin + 1);
+        int espera = 2 + rand() % 4;
 
         crearYEsperarHiloProceso(host, puerto, burst, prioridad);
 
@@ -227,11 +213,17 @@ int main(int argc, char **argv) {
 
     int modo = 0;
     int algoritmo = 0;
+    int quantum = 0;
 
     printf("Seleccione modo cliente:\n");
     printf("1. Manual\n");
     printf("2. Automatico\n");
     scanf("%d", &modo);
+
+    if (modo != 1 && modo != 2) {
+        printf("Modo no valido\n");
+        return 1;
+    }
 
     printf("Seleccione algoritmo de planificacion:\n");
     printf("1. FIFO\n");    
@@ -240,11 +232,22 @@ int main(int argc, char **argv) {
     printf("4. Round Robin\n");
     scanf("%d", &algoritmo);
 
-
-    int quantum = 0;
-    if (algoritmo == 4) {
-        printf("Ingrese el quantum: ");
-        scanf("%d", &quantum);
+    switch (algoritmo) {
+        case 1:
+        case 2:
+        case 3:
+            break;
+        case 4:
+            printf("Ingrese el quantum (debe ser mayor a 0): ");
+            scanf("%d", &quantum);
+            if (quantum <= 0) {
+                fprintf(stderr, "Quantum invalido. Debe ser un numero positivo.\n");
+                return 1;
+            }
+            break;
+        default:
+            fprintf(stderr, "Algoritmo no valido. Use 1, 2, 3 o 4.\n");
+            return 1;
     }
 
     // Enviar algoritmo y quantum al servidor antes de enviar procesos
@@ -264,13 +267,16 @@ int main(int argc, char **argv) {
     }
     close(fd_alg);
 
-    if (modo == 1) {
-        ejecutarModoManual(host, puerto);
-    } else if (modo == 2) {
-        ejecutarModoAutomatico(host, puerto);
-    } else {
-        printf("Modo no valido\n");
-        return 1;
+    switch (modo) {
+        case 1:
+            ejecutarModoManual(host, puerto);
+            break;
+        case 2:
+            ejecutarModoAutomatico(host, puerto);
+            break;
+        default:
+            printf("Modo no valido\n");
+            return 1;
     }
 
     return 0;

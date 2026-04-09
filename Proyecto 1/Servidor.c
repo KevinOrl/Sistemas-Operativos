@@ -1,4 +1,3 @@
-
 // Servidor: Job Scheduler + CPU Scheduler
 #include <errno.h>
 #include <pthread.h>
@@ -57,13 +56,17 @@ static volatile sig_atomic_t servidorActivo = 1;
 
 static int listenFd = -1;
 static int nextPid = 1;
-static time_t startTime;
+static time_t tiempoBaseSimulacion = 0;
+static int baseSimulacionInicializada = 0;
 
 static int procesosEjecutados = 0;
 static int cpuOciosoSegundos = 0;
 
 static int tiempoRelativoAhora(void) {
-    return (int)(time(NULL) - startTime);
+    if (!baseSimulacionInicializada) {
+        return 0;
+    }
+    return (int)(time(NULL) - tiempoBaseSimulacion);
 }
 
 static void registrarFinalizado(const PCB *p) {
@@ -218,6 +221,11 @@ static void *jobSchedulerThread(void *arg) {
         MensajeProceso msg;
         ssize_t r = recv(fd2, &msg, sizeof(msg), 0);
         if (r == (ssize_t)sizeof(msg)) {
+            if (!baseSimulacionInicializada) {
+                tiempoBaseSimulacion = time(NULL);
+                baseSimulacionInicializada = 1;
+            }
+
             PCB *p = (PCB *)malloc(sizeof(PCB));
             if (p != NULL) {
                 p->pid = __sync_fetch_and_add(&nextPid, 1);
@@ -260,6 +268,12 @@ static void ejecutarProceso(PCB *p, int quantum) {
 
     if (quantum > 0)
     {
+        int burstAntes = p->burstRestante;
+        printf("[RR] PID=%d entra en ejecucion. Burst restante=%d, Quantum=%d\n",
+               p->pid,
+               burstAntes,
+               quantum);
+
         //Validacion para saber si el quantum es mayor al burst restante, 
         //si es así se duerme el tiempo del burst restante y se asigna como 0
         if (quantum > p->burstRestante)
@@ -288,14 +302,18 @@ static void ejecutarProceso(PCB *p, int quantum) {
             registrarFinalizado(p);
             free(p);
         } else {
+            printf("[RR] PID=%d agoto quantum. Burst restante ahora=%d. Reingresa a READY.\n",
+                   p->pid,
+                   p->burstRestante);
             pthread_mutex_lock(&readyMutex);
             enqueueReady(p);
             pthread_cond_signal(&readyCond);
             pthread_mutex_unlock(&readyMutex);
         }
     }else{
-        printf("Proceso PID=%d entra en ejecucion (Burst=%d, Prioridad=%d)\n",
+        printf("Proceso PID=%d entra en ejecucion (Llegada=%d, Burst=%d, Prioridad=%d)\n",
             p->pid,
+            p->llegada,
             p->burstRestante,
             p->prioridad);
 
@@ -361,37 +379,34 @@ static void *cpuSchedulerThread(void *arg) {
         porque esta solamente trae el primer proceso que entró (FIFO)
         */
 
-        /*Caso FIFO*/
-       if (algoritmo == 1)
-       {
-        PCB *p = seleccionarSiguiente();
-        pthread_mutex_unlock(&readyMutex);
-        ejecutarProceso(p, 0);
-       }
+        PCB *p = NULL;
+        int quantumEjecucion = 0;
 
-       /*Caso SJF*/
-       if (algoritmo == 2)
-       {
-        PCB *p = seleccionarSiguienteSJF();
-        pthread_mutex_unlock(&readyMutex);
-        ejecutarProceso(p, 0);
-       }
+        switch (algoritmo) {
+            case 1:
+                p = seleccionarSiguiente();
+                quantumEjecucion = 0;
+                break;
+            case 2:
+                p = seleccionarSiguienteSJF();
+                quantumEjecucion = 0;
+                break;
+            case 3:
+                p = seleccionarSiguienteHPF();
+                quantumEjecucion = 0;
+                break;
+            case 4:
+                p = seleccionarSiguiente();
+                quantumEjecucion = quantum;
+                break;
+            default:
+                pthread_mutex_unlock(&readyMutex);
+                fprintf(stderr, "Algoritmo no valido: %d\n", algoritmo);
+                continue;
+        }
 
-       /*Caso HPF*/
-       if (algoritmo == 3)
-       {
-        PCB *p = seleccionarSiguienteHPF();
         pthread_mutex_unlock(&readyMutex);
-        ejecutarProceso(p, 0);
-       }
-
-       /*Caso Round Robin*/
-       if (algoritmo == 4)
-       {
-        PCB *p = seleccionarSiguiente();
-        pthread_mutex_unlock(&readyMutex);
-        ejecutarProceso(p, quantum);
-       }
+        ejecutarProceso(p, quantumEjecucion);
     }
 
     return NULL;
@@ -462,10 +477,7 @@ int main(int argc, char **argv) {
     }
 
     int puerto = atoi(argv[1]);
-    startTime = time(NULL);
     signal(SIGINT, manejarSigint);
-
-    printf("Servidor iniciado en modo FIFO para pruebas iniciales.\n");
 
     listenFd = socket(AF_INET, SOCK_STREAM, 0);
     if (listenFd < 0) {
