@@ -9,6 +9,7 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <netinet/in.h>
+#include <sys/select.h>
 #include <unistd.h>
 #include <time.h>
 
@@ -62,6 +63,18 @@ static int baseSimulacionInicializada = 0;
 static int procesosEjecutados = 0;
 static int cpuOciosoSegundos = 0;
 
+static void detenerServidor(void) {
+    servidorActivo = 0;
+
+    if (listenFd != -1) {
+        shutdown(listenFd, SHUT_RDWR);
+        close(listenFd);
+        listenFd = -1;
+    }
+
+    pthread_cond_broadcast(&readyCond);
+}
+
 static int tiempoRelativoAhora(void) {
     if (!baseSimulacionInicializada) {
         return 0;
@@ -107,8 +120,8 @@ static void enqueueReady(PCB *p) {
     cur->next = p;
 }
 
-/*Funcion para sacar el primer proceso que llegó a la cola y sacarlo (FIFO)*/
-static PCB *seleccionarSiguiente(void) {
+/*Saca el primer proceso de la cola READY (orden FIFO real de cola).*/
+static PCB *dequeueReady(void) {
     if (readyHead == NULL) {
         return NULL;
     }
@@ -116,6 +129,35 @@ static PCB *seleccionarSiguiente(void) {
     readyHead = readyHead->next;
     p->next = NULL;
     return p;
+}
+
+/*FIFO por criterio de PID: selecciona el menor PID disponible en READY.*/
+static PCB *seleccionarSiguienteFIFOporPID(void) {
+    if (readyHead == NULL) {
+        return NULL;
+    }
+
+    PCB *prevMin = NULL;
+    PCB *min = readyHead;
+    PCB *prev = readyHead;
+    PCB *cur = readyHead->next;
+
+    while (cur != NULL) {
+        if (cur->pid < min->pid) {
+            prevMin = prev;
+            min = cur;
+        }
+        prev = cur;
+        cur = cur->next;
+    }
+
+    if (min == readyHead) {
+        readyHead = min->next;
+    } else if (prevMin != NULL) {
+        prevMin->next = min->next;
+    }
+    min->next = NULL;
+    return min;
 }
 
 // Selecciona el proceso con mayor prioridad (menor valor de prioridad)
@@ -384,7 +426,7 @@ static void *cpuSchedulerThread(void *arg) {
 
         switch (algoritmo) {
             case 1:
-                p = seleccionarSiguiente();
+                p = seleccionarSiguienteFIFOporPID();
                 quantumEjecucion = 0;
                 break;
             case 2:
@@ -396,7 +438,7 @@ static void *cpuSchedulerThread(void *arg) {
                 quantumEjecucion = 0;
                 break;
             case 4:
-                p = seleccionarSiguiente();
+                p = dequeueReady();
                 quantumEjecucion = quantum;
                 break;
             default:
@@ -462,12 +504,7 @@ static void imprimirReporteFinal(void) {
 
 static void manejarSigint(int signal) {
     (void)signal;
-    servidorActivo = 0;
-    if (listenFd != -1) {
-        close(listenFd);
-        listenFd = -1;
-    }
-    pthread_cond_broadcast(&readyCond);
+    detenerServidor();
 }
 
 int main(int argc, char **argv) {
@@ -527,6 +564,19 @@ int main(int argc, char **argv) {
     algoritmo = datos[0];
     quantum = datos[1];
     close(fd_alg);
+
+    if (algoritmo < 1 || algoritmo > 4) {
+        fprintf(stderr, "Algoritmo invalido recibido: %d\n", algoritmo);
+        close(listenFd);
+        return 1;
+    }
+
+    if (algoritmo == 4 && quantum <= 0) {
+        fprintf(stderr, "Quantum invalido recibido para RR: %d\n", quantum);
+        close(listenFd);
+        return 1;
+    }
+
     printf("Algoritmo de planificacion recibido: %d\n", algoritmo);
     if (algoritmo == 4) {
         printf("Quantum recibido: %d\n", quantum);
@@ -553,23 +603,48 @@ int main(int argc, char **argv) {
     printf("Servidor activo en puerto %d. Comandos: cola | salir\n", puerto);
 
     char comando[64];
-    while (servidorActivo && scanf("%63s", comando) == 1) {
-        if (strcmp(comando, "cola") == 0) {
-            imprimirReady();
-        } else if (strcmp(comando, "salir") == 0) {
-            manejarSigint(SIGINT);
+    while (servidorActivo) {
+        fd_set lectura;
+        struct timeval timeout;
+
+        FD_ZERO(&lectura);
+        FD_SET(STDIN_FILENO, &lectura);
+        timeout.tv_sec = 1;
+        timeout.tv_usec = 0;
+
+        int listos = select(STDIN_FILENO + 1, &lectura, NULL, NULL, &timeout);
+        if (listos < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            perror("Error en select de comandos");
             break;
-        } else {
-            printf("Comando no reconocido. Use: cola | salir\n");
+        }
+
+        if (listos == 0) {
+            continue;
+        }
+
+        if (FD_ISSET(STDIN_FILENO, &lectura)) {
+            if (scanf("%63s", comando) != 1) {
+                if (feof(stdin)) {
+                    clearerr(stdin);
+                }
+                continue;
+            }
+
+            if (strcmp(comando, "cola") == 0) {
+                imprimirReady();
+            } else if (strcmp(comando, "salir") == 0) {
+                detenerServidor();
+                break;
+            } else {
+                printf("Comando no reconocido. Use: cola | salir\n");
+            }
         }
     }
 
-    servidorActivo = 0;
-    if (listenFd != -1) {
-        close(listenFd);
-        listenFd = -1;
-    }
-    pthread_cond_broadcast(&readyCond);
+    detenerServidor();
 
     pthread_join(jobThread, NULL);
     pthread_join(cpuThread, NULL);
