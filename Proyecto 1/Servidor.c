@@ -63,6 +63,21 @@ static int baseSimulacionInicializada = 0;
 static int procesosEjecutados = 0;
 static int cpuOciosoSegundos = 0;
 
+static const char *nombreAlgoritmo(int alg) {
+    switch (alg) {
+        case 1:
+            return "FIFO";
+        case 2:
+            return "SJF";
+        case 3:
+            return "HPF";
+        case 4:
+            return "RR";
+        default:
+            return "DESCONOCIDO";
+    }
+}
+
 static void detenerServidor(void) {
     servidorActivo = 0;
 
@@ -303,22 +318,25 @@ static void *jobSchedulerThread(void *arg) {
     return NULL;
 }
 
-static void ejecutarProceso(PCB *p, int quantum) {
+static void ejecutarProceso(PCB *p, int quantum, int algoritmoEjecucion) {
     if (p == NULL) {
         return;
     }
 
     int tiempoEntradaCPU = tiempoRelativoAhora();
+    const char *algNombre = nombreAlgoritmo(algoritmoEjecucion);
 
     if (quantum > 0)
     {
         int burstAntes = p->burstRestante;
         int cuanto = (quantum > burstAntes) ? burstAntes : quantum;
-        printf("[RR] PID=%d entra en ejecucion. Burst restante=%d, Quantum=%d\n",
+         printf("[%s] PID=%d entra en ejecucion. Burst restante=%d, Quantum=%d\n",
+             algNombre,
                p->pid,
                burstAntes,
                quantum);
-        printf("[RR] PID=%d tramo inicia en t=%d y ejecuta %d segundos\n",
+         printf("[%s] PID=%d tramo inicia en t=%d y ejecuta %d segundos\n",
+             algNombre,
                p->pid,
                tiempoEntradaCPU,
                cuanto);
@@ -335,7 +353,7 @@ static void ejecutarProceso(PCB *p, int quantum) {
             p->burstRestante -= quantum;
         }
 
-        printf("[RR] PID=%d tramo termina en t=%d\n", p->pid, tiempoRelativoAhora());
+        printf("[%s] PID=%d tramo termina en t=%d\n", algNombre, p->pid, tiempoRelativoAhora());
 
     
         if (p->burstRestante <= 0) {
@@ -353,7 +371,8 @@ static void ejecutarProceso(PCB *p, int quantum) {
             registrarFinalizado(p);
             free(p);
         } else {
-            printf("[RR] PID=%d agoto quantum. Burst restante ahora=%d. Reingresa a READY.\n",
+                 printf("[%s] PID=%d agoto quantum. Burst restante ahora=%d. Reingresa a READY.\n",
+                     algNombre,
                    p->pid,
                    p->burstRestante);
             pthread_mutex_lock(&readyMutex);
@@ -363,12 +382,14 @@ static void ejecutarProceso(PCB *p, int quantum) {
         }
     }else{
         int cuanto = p->burstRestante;
-        printf("Proceso PID=%d entra en ejecucion (Llegada=%d, Burst=%d, Prioridad=%d)\n",
+        printf("[%s] PID=%d entra en ejecucion (Llegada=%d, Burst=%d, Prioridad=%d)\n",
+            algNombre,
             p->pid,
             p->llegada,
             p->burstRestante,
             p->prioridad);
-        printf("PID=%d tramo inicia en t=%d y ejecuta %d segundos\n",
+        printf("[%s] PID=%d tramo inicia en t=%d y ejecuta %d segundos\n",
+               algNombre,
                p->pid,
                tiempoEntradaCPU,
                cuanto);
@@ -376,7 +397,7 @@ static void ejecutarProceso(PCB *p, int quantum) {
         sleep((unsigned int)cuanto);
         p->burstRestante -= cuanto;
 
-        printf("PID=%d tramo termina en t=%d\n", p->pid, tiempoRelativoAhora());
+        printf("[%s] PID=%d tramo termina en t=%d\n", algNombre, p->pid, tiempoRelativoAhora());
 
         if (p->burstRestante <= 0) {
             p->salida = tiempoRelativoAhora();
@@ -463,7 +484,7 @@ static void *cpuSchedulerThread(void *arg) {
         }
 
         pthread_mutex_unlock(&readyMutex);
-        ejecutarProceso(p, quantumEjecucion);
+        ejecutarProceso(p, quantumEjecucion, algoritmo);
     }
 
     return NULL;
