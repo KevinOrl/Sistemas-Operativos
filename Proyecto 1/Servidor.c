@@ -308,13 +308,20 @@ static void ejecutarProceso(PCB *p, int quantum) {
         return;
     }
 
+    int tiempoEntradaCPU = tiempoRelativoAhora();
+
     if (quantum > 0)
     {
         int burstAntes = p->burstRestante;
+        int cuanto = (quantum > burstAntes) ? burstAntes : quantum;
         printf("[RR] PID=%d entra en ejecucion. Burst restante=%d, Quantum=%d\n",
                p->pid,
                burstAntes,
                quantum);
+        printf("[RR] PID=%d tramo inicia en t=%d y ejecuta %d segundos\n",
+               p->pid,
+               tiempoEntradaCPU,
+               cuanto);
 
         //Validacion para saber si el quantum es mayor al burst restante, 
         //si es así se duerme el tiempo del burst restante y se asigna como 0
@@ -327,6 +334,8 @@ static void ejecutarProceso(PCB *p, int quantum) {
             sleep((unsigned int)quantum);
             p->burstRestante -= quantum;
         }
+
+        printf("[RR] PID=%d tramo termina en t=%d\n", p->pid, tiempoRelativoAhora());
 
     
         if (p->burstRestante <= 0) {
@@ -353,15 +362,21 @@ static void ejecutarProceso(PCB *p, int quantum) {
             pthread_mutex_unlock(&readyMutex);
         }
     }else{
+        int cuanto = p->burstRestante;
         printf("Proceso PID=%d entra en ejecucion (Llegada=%d, Burst=%d, Prioridad=%d)\n",
             p->pid,
             p->llegada,
             p->burstRestante,
             p->prioridad);
+        printf("PID=%d tramo inicia en t=%d y ejecuta %d segundos\n",
+               p->pid,
+               tiempoEntradaCPU,
+               cuanto);
 
-        int cuanto = p->burstRestante;
         sleep((unsigned int)cuanto);
         p->burstRestante -= cuanto;
+
+        printf("PID=%d tramo termina en t=%d\n", p->pid, tiempoRelativoAhora());
 
         if (p->burstRestante <= 0) {
             p->salida = tiempoRelativoAhora();
