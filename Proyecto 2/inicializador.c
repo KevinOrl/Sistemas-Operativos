@@ -68,14 +68,20 @@ static void pedir_parametros(int *total_frames, Esquema *esquema) {
     int opcion;
 
     // Cantidad de frames
+    //Ciclo que hace que el usuario ingrese un número entero entre 1 y MAX_FRAMES,
+    //validando la entrada, hasta que entre un numero valido
     do {
         printf("Ingrese la cantidad de frames de memoria (1-%d): ", MAX_FRAMES);
+        //escaneo de la cantidad de frames, validando que sea un entero
         if (scanf("%d", total_frames) != 1) {
+            // ciclo para limpiar el buffer de entrada en caso de que 
+            // el usuario ingrese algo que no sea un número entero
             while (getchar() != '\n');  // limpiar buffer
             *total_frames = 0;
         }
+        // Valida rango y tira mensaje de error si no es válido
         if (*total_frames < 1 || *total_frames > MAX_FRAMES)
-            printf("  ✗ Valor fuera de rango. Intente de nuevo.\n");
+            printf("  Error: Valor fuera de rango. Intente de nuevo.\n");
     } while (*total_frames < 1 || *total_frames > MAX_FRAMES);
 
     // Esquema de asignación
@@ -89,17 +95,21 @@ static void pedir_parametros(int *total_frames, Esquema *esquema) {
             opcion = -1;
         }
         if (opcion != 0 && opcion != 1)
-            printf("  ✗ Opcion invalida. Intente de nuevo.\n");
+            printf("  Error: Opcion invalida. Intente de nuevo.\n");
     } while (opcion != 0 && opcion != 1);
 
+    // Asignar esquema basado en opción
+    // quedaria por ejemplo *esquema = PAGINACION si opcion es 0, o SEGMENTACION si opcion es 1
     *esquema = (Esquema)opcion;
 }
 
 static int crear_shm(int total_frames, Esquema esquema) {
     // IPC_EXCL garantiza que no exista ya un segmento con esta clave
+    // reserva memoria de acuerdo a lo que puede guardar el struct MemoriaCompartida
     int shmid = shmget(SHM_KEY,
                        sizeof(MemoriaCompartida),
                        IPC_CREAT | IPC_EXCL | 0666);
+    // Si falla, probablemente ya exista un segmento con esa clave (no se limpió bien)
     if (shmid < 0) {
         perror("  ✗ shmget");
         fprintf(stderr,
@@ -147,7 +157,7 @@ static int crear_shm(int total_frames, Esquema esquema) {
 static int crear_semaforos(void) {
     int semid = semget(SEM_KEY, NUM_SEMS, IPC_CREAT | IPC_EXCL | 0666);
     if (semid < 0) {
-        perror("  ✗ semget");
+        perror("  Error semget");
         fprintf(stderr,
                 "  → ¿Ya existen semáforos con esa clave?\n"
                 "    Ejecute primero ./finalizador y vuelva a intentar.\n");
@@ -168,12 +178,12 @@ static int crear_semaforos(void) {
     arg.array = vals;
 
     if (semctl(semid, 0, SETALL, arg) < 0) {
-        perror("  ✗ semctl SETALL");
+        perror("  Error semctl SETALL");
         semctl(semid, 0, IPC_RMID, arg);
         exit(EXIT_FAILURE);
     }
 
-    printf("  ✓ Semaforos creados          (semid=%d, cantidad=%d)\n",
+    printf("  Error: Semaforos creados          (semid=%d, cantidad=%d)\n",
            semid, NUM_SEMS);
     return semid;
 }
