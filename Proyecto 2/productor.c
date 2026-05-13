@@ -100,6 +100,26 @@ void *proceso_hilo(void *arg) {
     MemoriaCompartida *mem = targs->mem;
     ParametrosProceso *params = &targs->params;
     int exito = 0;
+    int tabla_idx = -1;
+
+    /* Registrar entrada del proceso en la tabla de procesos */
+    sem_p(semid, SEM_TABLA);
+    for (int i = 0; i < MAX_PROCESSES; i++) {
+        if (mem->procesos[i].estado == PROC_VACIO) {
+            tabla_idx = i;
+            mem->procesos[i].pid = params->pid;
+            mem->procesos[i].estado = PROC_BUSCANDO;
+            mem->procesos[i].tiempo = params->tiempo;
+            mem->procesos[i].num_paginas = params->num_paginas;
+            mem->procesos[i].num_segmentos = params->num_segmentos;
+            mem->procesos[i].num_frames_asignados = 0;
+            for (int f = 0; f < MAX_FRAMES_POR_PROC; f++) mem->procesos[i].frames_asignados[f] = -1;
+            for (int s = 0; s < params->num_segmentos; s++)
+                mem->procesos[i].tam_segmentos[s] = params->tam_segmentos[s];
+            break;
+        }
+    }
+    sem_v(semid, SEM_TABLA);
 
     // 1. Buscar espacio en memoria (región crítica)
     sem_p(semid, SEM_MEMORIA);
@@ -123,6 +143,19 @@ void *proceso_hilo(void *arg) {
                 }
             }
             exito = 1;
+            /* Actualizar tabla de procesos con frames asignados */
+            if (tabla_idx >= 0) {
+                sem_p(semid, SEM_TABLA);
+                mem->procesos[tabla_idx].estado = PROC_EN_MEMORIA;
+                mem->procesos[tabla_idx].num_frames_asignados = asignados;
+                int copied = 0;
+                for (int f = 0; f < mem->total_frames && copied < asignados; f++) {
+                    if (mem->frames[f].pid == params->pid) {
+                        mem->procesos[tabla_idx].frames_asignados[copied++] = f;
+                    }
+                }
+                sem_v(semid, SEM_TABLA);
+            }
         }
 
         
@@ -152,6 +185,19 @@ void *proceso_hilo(void *arg) {
                 }
             }
             exito = 1;
+            /* Actualizar tabla de procesos con frames asignados (segmentacion) */
+            if (tabla_idx >= 0) {
+                sem_p(semid, SEM_TABLA);
+                mem->procesos[tabla_idx].estado = PROC_EN_MEMORIA;
+                mem->procesos[tabla_idx].num_frames_asignados = asignados;
+                int copied = 0;
+                for (int f = 0; f < mem->total_frames && copied < asignados; f++) {
+                    if (mem->frames[f].pid == params->pid) {
+                        mem->procesos[tabla_idx].frames_asignados[copied++] = f;
+                    }
+                }
+                sem_v(semid, SEM_TABLA);
+            }
         }
     }
     sem_v(semid, SEM_MEMORIA);
@@ -169,10 +215,25 @@ void *proceso_hilo(void *arg) {
                 mem->frames[i].segmento = -1;
             }
         }
+        /* Actualizar tabla: terminado y limpiar frames_asignados */
+        if (tabla_idx >= 0) {
+            sem_p(semid, SEM_TABLA);
+            mem->procesos[tabla_idx].estado = PROC_TERMINADO;
+            for (int f = 0; f < mem->procesos[tabla_idx].num_frames_asignados; f++)
+                mem->procesos[tabla_idx].frames_asignados[f] = -1;
+            mem->procesos[tabla_idx].num_frames_asignados = 0;
+            sem_v(semid, SEM_TABLA);
+        }
         sem_v(semid, SEM_MEMORIA);
         log_mensaje(semid, params->pid, "Liberación de memoria");
     } else {
         log_mensaje(semid, params->pid, "No hay espacio suficiente");
+        /* Marcar en tabla como muerto */
+        if (tabla_idx >= 0) {
+            sem_p(semid, SEM_TABLA);
+            mem->procesos[tabla_idx].estado = PROC_MUERTO;
+            sem_v(semid, SEM_TABLA);
+        }
     }
     pthread_exit(NULL);
 }

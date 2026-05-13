@@ -1,0 +1,26 @@
+|------------------------------------------------------|
+|          Bitácora del Sistema de Memoria             |
+|------------------------------------------------------|
+|  Inicio   : Wed May 13 16:56:24 2026
+|  Esquema  : Paginacion                              |
+|  Frames   : 20                                      |
+|------------------------------------------------------|
+
+[2026-05-13 16:56:31] PID=7401 | Asignación exitosa
+[2026-05-13 16:56:40] PID=7402 | Asignación exitosa
+[2026-05-13 16:57:06] PID=7403 | Asignación exitosa
+[2026-05-13 16:57:11] PID=7402 | Liberación de memoria
+[2026-05-13 16:57:12] PID=7404 | Asignación exitosa
+[2026-05-13 16:57:15] PID=7401 | Liberación de memoria
+[2026-05-13 16:57:23] PID=7405 | No hay espacio suficiente
+[2026-05-13 16:57:34] PID=7406 | Asignación exitosa
+[2026-05-13 16:57:50] PID=7404 | Liberación de memoria
+[2026-05-13 16:58:04] PID=7407 | No hay espacio suficiente
+[2026-05-13 16:58:06] PID=7403 | Liberación de memoria
+[2026-05-13 16:58:28] PID=7406 | Liberación de memoria
+[2026-05-13 16:58:30] PID=7408 | Asignación exitosa
+[2026-05-13 16:58:45] PID=7409 | Asignación exitosa
+[2026-05-13 16:59:08] PID=7408 | Liberación de memoria
+[2026-05-13 16:59:14] PID=7410 | Asignación exitosa
+[2026-05-13 16:59:22] PID=7409 | Liberación de memoria
+[2026-05-13 17:00:06] PID=7410 | Liberación de memoria

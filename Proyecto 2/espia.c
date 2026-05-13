@@ -57,6 +57,12 @@ void menu_espia() {
     if (shmid < 0) { perror("shmget"); exit(1); }
     MemoriaCompartida *mem = (MemoriaCompartida *)shmat(shmid, NULL, 0);
     if (mem == (void *)-1) { perror("shmat"); exit(1); }
+    int semid = semget(SEM_KEY, NUM_SEMS, 0666);
+    if (semid < 0) {
+        perror("semget");
+        /* No salimos: espia puede seguir mostrando bitacora, pero advertimos */
+        fprintf(stderr, "Aviso: no se pudieron obtener semáforos; lecturas no serán protegidas.\n");
+    }
     int opcion;
     do {
         printf("\n===== MENÚ ESPIA =====\n");
@@ -67,8 +73,16 @@ void menu_espia() {
         printf("Opción: ");
         scanf("%d", &opcion);
         switch (opcion) {
-            case 1: mostrar_estado_memoria(mem); break;
-            case 2: mostrar_estado_procesos(mem); break;
+            case 1:
+                if (semid >= 0) sem_p(semid, SEM_MEMORIA);
+                mostrar_estado_memoria(mem);
+                if (semid >= 0) sem_v(semid, SEM_MEMORIA);
+                break;
+            case 2:
+                if (semid >= 0) sem_p(semid, SEM_TABLA);
+                mostrar_estado_procesos(mem);
+                if (semid >= 0) sem_v(semid, SEM_TABLA);
+                break;
             case 3: mostrar_bitacora(); break;
             case 4: printf("Saliendo...\n"); break;
             default: printf("Opción inválida.\n"); break;

@@ -149,6 +149,26 @@ static int crear_semaforos(void) {
     return semid;
 }
 
+static void inicializar_log(int total_frames, Esquema esquema) {
+    FILE *f = fopen(LOG_FILE, "w");   // 'w' → sobreescribir si existía
+    if (!f) {
+        perror("  ✗ fopen bitácora");
+        exit(EXIT_FAILURE);
+    }
+
+    time_t now = time(NULL);
+    fprintf(f, "|------------------------------------------------------|\n");
+    fprintf(f, "|          Bitácora del Sistema de Memoria             |\n");
+    fprintf(f, "|------------------------------------------------------|\n");
+    fprintf(f, "|  Inicio   : %s", ctime(&now));
+    fprintf(f, "|  Esquema  : %-40s|\n",
+            esquema == PAGINACION ? "Paginacion" : "Segmentacion");
+    fprintf(f, "|  Frames   : %-40d|\n", total_frames);
+    fprintf(f, "|------------------------------------------------------|\n\n");
+
+    fclose(f);
+    printf("  ✓ Bitácora inicializada      (%s)\n", LOG_FILE);
+}
 
 // MAIN
 int main(void) {
