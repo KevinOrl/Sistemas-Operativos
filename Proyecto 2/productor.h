@@ -9,7 +9,7 @@ typedef struct {
     int tiempo;
     int num_paginas; // Para paginación
     int num_segmentos; // Para segmentación
-    int tam_segmentos[MAX_SEGS];
+    int tam_segmentos[MAX_SEGS]; // [2, 3]
 } ParametrosProceso;
 
 void crear_procesos();
