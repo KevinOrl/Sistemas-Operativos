@@ -110,7 +110,7 @@ static int crear_shm(int total_frames, Esquema esquema) {
 
     shmdt(mem);
 
-    printf("  ✓ Memoria compartida creada  (shmid=%d, %zu bytes)\n",
+    printf("  Memoria compartida creada  (shmid=%d, %zu bytes)\n",
            shmid, sizeof(MemoriaCompartida));
     return shmid;
 }
@@ -144,7 +144,7 @@ static int crear_semaforos(void) {
         exit(EXIT_FAILURE);
     }
 
-    printf("  Error: Semaforos creados          (semid=%d, cantidad=%d)\n",
+    printf("  Semaforos creados          (semid=%d, cantidad=%d)\n",
            semid, NUM_SEMS);
     return semid;
 }
