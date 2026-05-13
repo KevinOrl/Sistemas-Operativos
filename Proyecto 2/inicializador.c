@@ -24,45 +24,6 @@ static int  crear_shm(int total_frames, Esquema esquema);
 static int  crear_semaforos(void);
 static void inicializar_log(int total_frames, Esquema esquema);
 
-
-// MAIN
-int main(void) {
-    int    total_frames;
-    Esquema esquema;
-
-    printf("\n|------------------------------------------|\n");
-    printf(  "|   Inicializador del Sistema de Memoria   |\n");
-    printf(  "|------------------------------------------|\n\n");
-
-    // 1. Solicitar parámetros al usuario
-    pedir_parametros(&total_frames, &esquema);
-
-    // 2. Crear e inicializar memoria compartida
-    int shmid = crear_shm(total_frames, esquema);
-
-    // 3. Crear semáforos
-    int semid = crear_semaforos();
-
-    // 4. Inicializar bitácora
-    inicializar_log(total_frames, esquema);
-
-    // 5. Resumen
-    printf("\n|------------------------------------------|\n");
-    printf("|            Sistema inicializado          |\n");
-    printf("|------------------------------------------|\n");
-    printf("|  shmid   : %-28d │\n", shmid);
-    printf("|  semid   : %-28d │\n", semid);
-    printf("|  Frames  : %-28d │\n", total_frames);
-    printf("|  Esquema : %-28s │\n",
-           esquema == PAGINACION ? "Paginacion" : "Segmentacion");
-    printf("|  Log     : %-28s │\n", LOG_FILE);
-    printf("|-----------------------------------------|\n\n");
-    printf("Inicializador terminando. Ya puede lanzar los demás programas.\n\n");
-
-    return 0;
-}
-
-
 // IMPLEMENTACIONES
 static void pedir_parametros(int *total_frames, Esquema *esquema) {
     int opcion;
@@ -149,7 +110,7 @@ static int crear_shm(int total_frames, Esquema esquema) {
 
     shmdt(mem);
 
-    printf("  ✓ Memoria compartida creada  (shmid=%d, %zu bytes)\n",
+    printf("  Memoria compartida creada  (shmid=%d, %zu bytes)\n",
            shmid, sizeof(MemoriaCompartida));
     return shmid;
 }
@@ -183,28 +144,45 @@ static int crear_semaforos(void) {
         exit(EXIT_FAILURE);
     }
 
-    printf("  Error: Semaforos creados          (semid=%d, cantidad=%d)\n",
+    printf("  Semaforos creados          (semid=%d, cantidad=%d)\n",
            semid, NUM_SEMS);
     return semid;
 }
 
-static void inicializar_log(int total_frames, Esquema esquema) {
-    FILE *f = fopen(LOG_FILE, "w");   // 'w' → sobreescribir si existía
-    if (!f) {
-        perror("  ✗ fopen bitácora");
-        exit(EXIT_FAILURE);
-    }
 
-    time_t now = time(NULL);
-    fprintf(f, "|------------------------------------------------------|\n");
-    fprintf(f, "|          Bitácora del Sistema de Memoria             |\n");
-    fprintf(f, "|------------------------------------------------------|\n");
-    fprintf(f, "|  Inicio   : %s", ctime(&now));
-    fprintf(f, "|  Esquema  : %-40s|\n",
-            esquema == PAGINACION ? "Paginacion" : "Segmentacion");
-    fprintf(f, "|  Frames   : %-40d|\n", total_frames);
-    fprintf(f, "|------------------------------------------------------|\n\n");
+// MAIN
+int main(void) {
+    int    total_frames;
+    Esquema esquema;
 
-    fclose(f);
-    printf("  ✓ Bitácora inicializada      (%s)\n", LOG_FILE);
+    printf("\n|------------------------------------------|\n");
+    printf(  "|   Inicializador del Sistema de Memoria   |\n");
+    printf(  "|------------------------------------------|\n\n");
+
+    // 1. Solicitar parámetros al usuario
+    pedir_parametros(&total_frames, &esquema);
+
+    // 2. Crear e inicializar memoria compartida
+    int shmid = crear_shm(total_frames, esquema);
+
+    // 3. Crear semáforos
+    int semid = crear_semaforos();
+
+    // 4. Inicializar bitácora
+    inicializar_log(total_frames, esquema);
+
+    // 5. Resumen
+    printf("\n|------------------------------------------|\n");
+    printf("|            Sistema inicializado          |\n");
+    printf("|------------------------------------------|\n");
+    printf("|  shmid   : %-28d │\n", shmid);
+    printf("|  semid   : %-28d │\n", semid);
+    printf("|  Frames  : %-28d │\n", total_frames);
+    printf("|  Esquema : %-28s │\n",
+           esquema == PAGINACION ? "Paginacion" : "Segmentacion");
+    printf("|  Log     : %-28s │\n", LOG_FILE);
+    printf("|-----------------------------------------|\n\n");
+    printf("Inicializador terminando. Ya puede lanzar los demás programas.\n\n");
+
+    return 0;
 }
