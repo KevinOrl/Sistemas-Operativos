@@ -80,7 +80,13 @@ void crear_procesos() {
         // y se le asigna un tiempo de ejecucion aleatorio entre 20
         // y 60 segundos, y dependiendo del esquema de memoria, 
         //se le asigna un numero aleatorio de paginas o segmentos.
-        pthread_create(&hilos[i], NULL, proceso_hilo, &args[i]);
+        printf("[PRODUCTOR] Creando proceso simulado PID=%d\n", args[i].params.pid);
+        if (pthread_create(&hilos[i], NULL, proceso_hilo, &args[i]) != 0) {
+            perror("pthread_create");
+        } else {
+            printf("[PRODUCTOR] Hilo creado para PID=%d (indice %d)\n", args[i].params.pid, i);
+        }
+        fflush(stdout);
         sleep(1 + rand() % 31); // 1-31s entre procesos
     }
     // 3. Esperar a que terminen
@@ -101,6 +107,10 @@ void *proceso_hilo(void *arg) {
     ParametrosProceso *params = &targs->params;
     int exito = 0;
     int tabla_idx = -1;
+
+        printf("[HILO] Inicio PID=%d tiempo=%d paginas=%d segmentos=%d\n",
+            params->pid, params->tiempo, params->num_paginas, params->num_segmentos);
+        fflush(stdout);
 
     /* Registrar entrada del proceso en la tabla de procesos */
     sem_p(semid, SEM_TABLA);
@@ -226,6 +236,8 @@ void *proceso_hilo(void *arg) {
         }
         sem_v(semid, SEM_MEMORIA);
         log_mensaje(semid, params->pid, "Liberación de memoria");
+        printf("[HILO] PID=%d liberó memoria y termina\n", params->pid);
+        fflush(stdout);
     } else {
         log_mensaje(semid, params->pid, "No hay espacio suficiente");
         /* Marcar en tabla como muerto */
@@ -234,6 +246,8 @@ void *proceso_hilo(void *arg) {
             mem->procesos[tabla_idx].estado = PROC_MUERTO;
             sem_v(semid, SEM_TABLA);
         }
+        printf("[HILO] PID=%d no pudo asignarse (muerto)\n", params->pid);
+        fflush(stdout);
     }
     pthread_exit(NULL);
 }
