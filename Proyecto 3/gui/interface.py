@@ -77,9 +77,9 @@ class FileSystemGUI:
         ttk.Label(r1, text="Navegar:").pack(side=tk.LEFT, padx=(0, 4))
         ttk.Button(r1, text="Subir [..]", style="Nav.TButton",
                    command=self._cmd_go_up).pack(side=tk.LEFT, padx=2)
-        ttk.Button(r1, text="CD", style="Nav.TButton",
+        ttk.Button(r1, text="CambiarDIR", style="Nav.TButton",
                    command=self._cmd_cd).pack(side=tk.LEFT, padx=2)
-        ttk.Button(r1, text="LISTAR", command=self._cmd_listar).pack(side=tk.LEFT, padx=2)
+        ttk.Button(r1, text="ListarDIR", command=self._cmd_listar).pack(side=tk.LEFT, padx=2)
         ttk.Button(r1, text="TREE", command=self._cmd_tree).pack(side=tk.LEFT, padx=2)
         ttk.Separator(r1, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
         ttk.Label(r1, text="Disco:").pack(side=tk.LEFT, padx=(0, 4))
@@ -93,17 +93,17 @@ class FileSystemGUI:
         ttk.Button(r2, text="FILE", command=self._cmd_file).pack(side=tk.LEFT, padx=2)
         ttk.Separator(r2, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
         ttk.Label(r2, text="Archivo:").pack(side=tk.LEFT, padx=(0, 4))
-        ttk.Button(r2, text="VER FILE", command=self._cmd_ver_file).pack(side=tk.LEFT, padx=2)
-        ttk.Button(r2, text="PROPIEDADES", command=self._cmd_propiedades).pack(side=tk.LEFT, padx=2)
-        ttk.Button(r2, text="MODIFICAR", command=self._cmd_mod_file).pack(side=tk.LEFT, padx=2)
+        ttk.Button(r2, text="VerFile", command=self._cmd_ver_file).pack(side=tk.LEFT, padx=2)
+        ttk.Button(r2, text="VerPropiedades", command=self._cmd_propiedades).pack(side=tk.LEFT, padx=2)
+        ttk.Button(r2, text="ModFILE", command=self._cmd_mod_file).pack(side=tk.LEFT, padx=2)
 
         # Fila 3: Operaciones avanzadas
         r3 = ttk.Frame(cmd_frame)
         r3.pack(fill=tk.X, pady=2)
         ttk.Label(r3, text="Gestión:").pack(side=tk.LEFT, padx=(0, 4))
-        ttk.Button(r3, text="COPY", command=self._cmd_copy).pack(side=tk.LEFT, padx=2)
-        ttk.Button(r3, text="MOVER/RENAME", command=self._cmd_mover).pack(side=tk.LEFT, padx=2)
-        ttk.Button(r3, text="ELIMINAR", style="Danger.TButton",
+        ttk.Button(r3, text="CoPY", command=self._cmd_copy).pack(side=tk.LEFT, padx=2)
+        ttk.Button(r3, text="MoVer", command=self._cmd_mover).pack(side=tk.LEFT, padx=2)
+        ttk.Button(r3, text="ReMove", style="Danger.TButton",
                    command=self._cmd_remove).pack(side=tk.LEFT, padx=2)
         ttk.Button(r3, text="FIND", command=self._cmd_find).pack(side=tk.LEFT, padx=2)
         ttk.Separator(r3, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
@@ -170,7 +170,7 @@ class FileSystemGUI:
         for fname, fobj in sorted(directory.files.items()):
             self.tree.insert(
                 node_id, "end",
-                text=f"    {fname}.{fobj.extension}  ({fobj.size}B)",
+                text=f"    {fname}  ({fobj.size}B)",
                 values=(path + "/" + fname, "file"),
             )
 
@@ -323,11 +323,10 @@ class FileSystemGUI:
             messagebox.showwarning("Advertencia", "No hay archivos en el directorio actual.",
                                    parent=self.root)
             return
-        items = [f"{n}.{o.extension}" for n, o in sorted(files.items())]
+        items = sorted(files.keys())
         dialog = SelectDialog(self.root, "Ver Archivo", items)
         if dialog.result:
-            name = dialog.result.rsplit(".", 1)[0]
-            result = self.fs.VerFile(name)
+            result = self.fs.VerFile(dialog.result)
             self._print(result, "info")
 
     def _cmd_propiedades(self):
@@ -336,11 +335,10 @@ class FileSystemGUI:
             messagebox.showwarning("Advertencia", "No hay archivos en el directorio actual.",
                                    parent=self.root)
             return
-        items = [f"{n}.{o.extension}" for n, o in sorted(files.items())]
+        items = sorted(files.keys())
         dialog = SelectDialog(self.root, "Propiedades de Archivo", items)
         if dialog.result:
-            name = dialog.result.rsplit(".", 1)[0]
-            result = self.fs.VerPropiedades(name)
+            result = self.fs.VerPropiedades(dialog.result)
             self._print(result, "info")
 
     def _cmd_mod_file(self):
@@ -349,15 +347,15 @@ class FileSystemGUI:
             messagebox.showwarning("Advertencia", "No hay archivos en el directorio actual.",
                                    parent=self.root)
             return
-        items = [f"{n}.{o.extension}" for n, o in sorted(files.items())]
+        items = sorted(files.keys())
         dialog = SelectDialog(self.root, "Seleccionar Archivo a Modificar", items)
         if not dialog.result:
             return
-        name = dialog.result.rsplit(".", 1)[0]
-        current_content = files[name].content or ""
-        mod_dialog = ModifyFileDialog(self.root, dialog.result, current_content)
+        fullname = dialog.result
+        current_content = files[fullname].content or ""
+        mod_dialog = ModifyFileDialog(self.root, fullname, current_content)
         if mod_dialog.result is not None:
-            result = self.fs.ModFILE(name, mod_dialog.result)
+            result = self.fs.ModFILE(fullname, mod_dialog.result)
             self._print(result)
             self._update_info()
 
@@ -802,9 +800,9 @@ class CopyDialog(tk.Toplevel):
         ttk.Button(dst_frame, text="...", width=3, command=self._browse_dst).pack(side=tk.LEFT)
 
         hint = ttk.Label(self,
-                         text="Virtual->Virtual: destino = nuevo_nombre.ext\n"
-                              "Real->Virtual: origen = ruta PC, destino = nombre.ext\n"
-                              "Virtual->Real: origen = nombre.ext, destino = ruta PC",
+                         text="Virtual->Virtual: destino = nuevo_nombre.ext  o  nombre_carpeta\n"
+                              "Real->Virtual: origen = ruta PC (archivo o carpeta)\n"
+                              "Virtual->Real: origen = nombre.ext  o  nombre_carpeta",
                          foreground="gray", font=("TkDefaultFont", 8))
         hint.pack(padx=15, pady=4, anchor=tk.W)
 
@@ -818,20 +816,33 @@ class CopyDialog(tk.Toplevel):
         parent.wait_window(self)
 
     def _browse_src(self):
-        if self.copy_type.get() == "real_to_virtual":
-            path = filedialog.askopenfilename(parent=self, title="Selecciona archivo real")
+        ctype = self.copy_type.get()
+        if ctype == "real_to_virtual":
+            choice = messagebox.askyesno(
+                "Tipo de origen", "¿Copiar un archivo?\n(No = Copiar una carpeta)", parent=self)
+            if choice:
+                path = filedialog.askopenfilename(parent=self, title="Selecciona archivo real")
+            else:
+                path = filedialog.askdirectory(parent=self, title="Selecciona carpeta real")
             if path:
                 self.source_var.set(path)
         else:
-            files = [f"{n}.{o.extension}" for n, o in self.fs.current_dir.files.items()]
-            if files:
-                dlg = SelectDialog(self, "Archivo virtual origen", sorted(files))
+            files = sorted(self.fs.current_dir.files.keys())
+            dirs = sorted(self.fs.current_dir.subdirs.keys())
+            items = files + dirs
+            if items:
+                dlg = SelectDialog(self, "Elemento virtual origen", items)
                 if dlg.result:
                     self.source_var.set(dlg.result)
 
     def _browse_dst(self):
-        if self.copy_type.get() == "virtual_to_real":
-            path = filedialog.asksaveasfilename(parent=self, title="Guardar como")
+        ctype = self.copy_type.get()
+        if ctype == "virtual_to_real":
+            src = self.source_var.get().strip()
+            if src in self.fs.current_dir.subdirs:
+                path = filedialog.askdirectory(parent=self, title="Selecciona carpeta destino")
+            else:
+                path = filedialog.asksaveasfilename(parent=self, title="Guardar como")
             if path:
                 self.dest_var.set(path)
 

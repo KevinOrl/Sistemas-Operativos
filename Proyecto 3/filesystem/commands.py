@@ -1,6 +1,5 @@
 import os
 import fnmatch
-from datetime import datetime
 from filesystem.directory import Directory
 from filesystem.file import File
 from filesystem.disk import VirtualDisk
@@ -71,10 +70,10 @@ class FileSystem:
             return "Error: Debe crear un disco primero con CREATE."
 
         fullname = f"{name}.{extension}"
-        if name in self.current_dir.files:
+        if fullname in self.current_dir.files:
             if not overwrite:
                 raise Exception("FILE_EXISTS")
-            old_file = self.current_dir.files[name]
+            old_file = self.current_dir.files[fullname]
             self.disk.free(old_file.sectors)
 
         try:
@@ -84,8 +83,9 @@ class FileSystem:
                 (len(content_bytes) + self.disk.sector_size - 1) // self.disk.sector_size,
             )
             allocated = self.disk.allocate(sectors_needed)
+            self.disk.write_data(allocated, content_bytes)
             new_file = File(name, extension, content, allocated)
-            self.current_dir.files[name] = new_file
+            self.current_dir.files[fullname] = new_file
             return (f"Archivo '{fullname}' creado "
                     f"({sectors_needed} sector(es), {len(content_bytes)} bytes).")
         except Exception as e:
@@ -101,7 +101,7 @@ class FileSystem:
             for dname in sorted(self.current_dir.subdirs):
                 lines.append(f"  [DIR]  {dname}/")
             for fname, fobj in sorted(self.current_dir.files.items()):
-                lines.append(f"  [FILE] {fname}.{fobj.extension}  ({fobj.size} bytes)")
+                lines.append(f"  [FILE] {fname}  ({fobj.size} bytes)")
 
         lines.append("")
         return "\n".join(lines)
@@ -128,8 +128,10 @@ class FileSystem:
                 1,
                 (len(content_bytes) + self.disk.sector_size - 1) // self.disk.sector_size,
             )
-            new_sectors = self.disk.allocate(sectors_needed)
+            # Free old sectors before allocating new ones so they can be reused
             self.disk.free(old_sectors)
+            new_sectors = self.disk.allocate(sectors_needed)
+            self.disk.write_data(new_sectors, content_bytes)
             file_obj.modify(new_content)
             file_obj.sectors = new_sectors
             return f"Archivo '{filename}' modificado ({len(content_bytes)} bytes)."
@@ -142,7 +144,7 @@ class FileSystem:
 
         f = self.current_dir.files[filename]
         lines = [
-            f"\nPropiedades de '{filename}.{f.extension}':",
+            f"\nPropiedades de '{filename}':",
             f"  Nombre     : {f.name}",
             f"  Extension  : {f.extension}",
             f"  Tamano     : {f.size} bytes",
@@ -159,7 +161,7 @@ class FileSystem:
 
         f = self.current_dir.files[filename]
         lines = [
-            f"\n--- {filename}.{f.extension} ---",
+            f"\n--- {filename} ---",
             f.content if f.content else "(vacio)",
             "--- fin ---\n",
         ]
@@ -168,30 +170,28 @@ class FileSystem:
     def COPY(self, source, destination, copy_type="virtual_to_virtual", overwrite=False):
         if copy_type == "real_to_virtual":
             if not os.path.exists(source):
-                return f"Error: El archivo real '{source}' no existe."
+                return f"Error: '{source}' no existe."
+            if os.path.isdir(source):
+                return self._copy_real_dir_to_virtual(source, overwrite)
             try:
                 with open(source, "r", encoding="utf-8", errors="replace") as fh:
                     content = fh.read()
             except Exception as e:
                 return f"Error al leer archivo: {e}"
-
             basename = os.path.basename(source)
-            if "." in basename:
-                name, ext = basename.rsplit(".", 1)
-            else:
-                name, ext = basename, "txt"
+            name, ext = basename.rsplit(".", 1) if "." in basename else (basename, "txt")
             return self.FILE(name, ext, content, overwrite=overwrite)
 
         elif copy_type == "virtual_to_real":
-            fname = source.split(".")[0] if "." in source else source
-            if fname not in self.current_dir.files:
+            if source in self.current_dir.subdirs:
+                return self._copy_virtual_dir_to_real(
+                    self.current_dir.subdirs[source], destination)
+            if source not in self.current_dir.files:
                 return f"Error: Archivo virtual '{source}' no existe."
-
-            fobj = self.current_dir.files[fname]
+            fobj = self.current_dir.files[source]
             dest_dir = os.path.dirname(destination)
             if dest_dir:
                 os.makedirs(dest_dir, exist_ok=True)
-
             try:
                 with open(destination, "w", encoding="utf-8") as fh:
                     fh.write(fobj.content or "")
@@ -200,16 +200,16 @@ class FileSystem:
                 return f"Error al escribir archivo: {e}"
 
         else:  # virtual_to_virtual
-            fname = source.split(".")[0] if "." in source else source
-            if fname not in self.current_dir.files:
+            if source in self.current_dir.subdirs:
+                return self._copy_virtual_dir_to_virtual(
+                    self.current_dir.subdirs[source], destination, overwrite)
+            if source not in self.current_dir.files:
                 return f"Error: Archivo '{source}' no existe."
-
-            fobj = self.current_dir.files[fname]
-            if "." in destination:
-                new_name, new_ext = destination.rsplit(".", 1)
-            else:
-                new_name, new_ext = destination, fobj.extension
-
+            fobj = self.current_dir.files[source]
+            new_name, new_ext = (
+                destination.rsplit(".", 1) if "." in destination
+                else (destination, fobj.extension)
+            )
             return self.FILE(new_name, new_ext, fobj.content, overwrite=overwrite)
 
     def MoVer(self, source, destination):
@@ -224,19 +224,24 @@ class FileSystem:
 
         if source in self.current_dir.files:
             fobj = self.current_dir.files.pop(source)
-            key = dest_name.split(".")[0] if "." in dest_name else dest_name
-            if key in target_dir.files and self.disk:
-                self.disk.free(target_dir.files[key].sectors)
-            fobj.name = key
-            target_dir.files[key] = fobj
-            return f"Archivo '{source}' movido/renombrado a '{destination}'."
+            new_name, new_ext = (
+                dest_name.rsplit(".", 1) if "." in dest_name
+                else (dest_name, fobj.extension)
+            )
+            new_fullname = f"{new_name}.{new_ext}"
+            if new_fullname in target_dir.files and self.disk:
+                self.disk.free(target_dir.files[new_fullname].sectors)
+            fobj.name = new_name
+            fobj.extension = new_ext
+            target_dir.files[new_fullname] = fobj
+            return f"Archivo '{source}' movido/renombrado a '{new_fullname}'."
 
         elif source in self.current_dir.subdirs:
             dobj = self.current_dir.subdirs.pop(source)
             dobj.name = dest_name
             dobj.parent = target_dir
             target_dir.subdirs[dest_name] = dobj
-            return f"Directorio '{source}' movido/renombrado a '{destination}'."
+            return f"Directorio '{source}' movido/renombrado a '{dest_name}'."
 
         else:
             return f"Error: '{source}' no existe en el directorio actual."
@@ -291,9 +296,8 @@ class FileSystem:
 
     def _find_recursive(self, directory, pattern, results, current_path):
         for fname, fobj in directory.files.items():
-            full = f"{fname}.{fobj.extension}"
-            if fnmatch.fnmatch(full, pattern) or fnmatch.fnmatch(fname, pattern):
-                results.append(f"{current_path}/{full}")
+            if fnmatch.fnmatch(fname, pattern) or fnmatch.fnmatch(fobj.name, pattern):
+                results.append(f"{current_path}/{fname}")
 
         for dname, subdir in directory.subdirs.items():
             new_path = f"{current_path}/{dname}" if current_path else f"/{dname}"
@@ -304,14 +308,66 @@ class FileSystem:
     def _tree_entries(self, directory, prefix, lines):
         items = (
             [(n, "dir", d) for n, d in sorted(directory.subdirs.items())]
-            + [(f"{n}.{o.extension}", "file", o) for n, o in sorted(directory.files.items())]
+            + [(n, "file", o) for n, o in sorted(directory.files.items())]
         )
         for i, (name, kind, obj) in enumerate(items):
             is_last = i == len(items) - 1
             conn = "L-- " if is_last else "+-- "
-            ext = "    " if is_last else "|   "
+            child_prefix = "    " if is_last else "|   "
             if kind == "dir":
                 lines.append(f"{prefix}{conn}{name}/")
-                self._tree_entries(obj, prefix + ext, lines)
+                self._tree_entries(obj, prefix + child_prefix, lines)
             else:
                 lines.append(f"{prefix}{conn}{name}")
+
+    def _copy_real_dir_to_virtual(self, real_path, overwrite=False):
+        dirname = os.path.basename(real_path.rstrip("/\\"))
+        try:
+            self.MKDIR(dirname, overwrite=overwrite)
+        except Exception as e:
+            if "DIR_EXISTS" not in str(e):
+                return f"Error creando directorio '{dirname}': {e}"
+
+        saved_dir = self.current_dir
+        self.current_dir = self.current_dir.subdirs[dirname]
+        for item in os.listdir(real_path):
+            item_path = os.path.join(real_path, item)
+            if os.path.isfile(item_path):
+                try:
+                    with open(item_path, "r", encoding="utf-8", errors="replace") as fh:
+                        content = fh.read()
+                    name, ext = item.rsplit(".", 1) if "." in item else (item, "txt")
+                    self.FILE(name, ext, content, overwrite=overwrite)
+                except Exception:
+                    pass
+            elif os.path.isdir(item_path):
+                self._copy_real_dir_to_virtual(item_path, overwrite)
+        self.current_dir = saved_dir
+        return f"Directorio '{dirname}' importado desde PC."
+
+    def _copy_virtual_dir_to_real(self, vdir, real_dest):
+        os.makedirs(real_dest, exist_ok=True)
+        for fname, fobj in vdir.files.items():
+            try:
+                with open(os.path.join(real_dest, fname), "w", encoding="utf-8") as fh:
+                    fh.write(fobj.content or "")
+            except Exception:
+                pass
+        for dname, subdir in vdir.subdirs.items():
+            self._copy_virtual_dir_to_real(subdir, os.path.join(real_dest, dname))
+        return f"Directorio exportado a '{real_dest}'."
+
+    def _copy_virtual_dir_to_virtual(self, source_dir, dest_name, overwrite=False):
+        try:
+            self.MKDIR(dest_name, overwrite=overwrite)
+        except Exception as e:
+            if "DIR_EXISTS" not in str(e):
+                return f"Error: {e}"
+        saved_dir = self.current_dir
+        self.current_dir = self.current_dir.subdirs[dest_name]
+        for fobj in source_dir.files.values():
+            self.FILE(fobj.name, fobj.extension, fobj.content, overwrite=overwrite)
+        for dname, subdir in source_dir.subdirs.items():
+            self._copy_virtual_dir_to_virtual(subdir, dname, overwrite)
+        self.current_dir = saved_dir
+        return f"Directorio '{source_dir.name}' copiado como '{dest_name}'."
