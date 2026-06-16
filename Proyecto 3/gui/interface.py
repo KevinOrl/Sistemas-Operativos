@@ -398,6 +398,19 @@ class FileSystemGUI:
             self._update_info()
 
     def _cmd_remove(self):
+        selected = self.tree.selection()
+        if selected:
+            values = self.tree.item(selected[0])["values"]
+            if values and len(values) >= 2:
+                path, kind = values[0], values[1]
+                if kind == "dir":
+                    self.fs.CambiarDIR(path)
+                    self._update_info()
+                elif kind == "file":
+                    parent_path = path.rsplit("/", 1)[0] or "/"
+                    self.fs.CambiarDIR(parent_path)
+                    self._update_info()
+
         files = list(self.fs.current_dir.files.keys())
         dirs = list(self.fs.current_dir.subdirs.keys())
         items = sorted(files) + sorted(dirs)
